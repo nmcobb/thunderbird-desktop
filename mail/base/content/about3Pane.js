@@ -4540,6 +4540,11 @@ var threadPane = {
     threadTree.addEventListener("collapsed", this);
     threadTree.addEventListener("scroll", this);
     threadTree.addEventListener("showplaceholder", this);
+    threadTree.addEventListener("MozSwipeGestureMayStart", this);
+    threadTree.addEventListener("MozSwipeGestureStart", this);
+    threadTree.addEventListener("MozSwipeGestureUpdate", this);
+    threadTree.addEventListener("MozSwipeGestureEnd", this);
+    threadTree.addEventListener("MozSwipeGesture", this);
   },
 
   uninit() {
@@ -4626,8 +4631,172 @@ var threadPane = {
             : "placeholderNoMessages",
         ]);
         break;
+      case "MozSwipeGestureMayStart": {
+        const row = event.target.closest('tr[is^="thread-"]');
+        if (row) {
+          event.preventDefault();
+          event.allowedDirections =
+            event.DIRECTION_LEFT | event.DIRECTION_RIGHT;
+        }
+        break;
+      }
+      case "MozSwipeGestureStart": {
+        event.preventDefault();
+        const row = event.target.closest('tr[is^="thread-"]');
+        this._swipeRow = row;
+        this._swipeCard = row?.querySelector(".card-container");
+        this._swipeCommitted = false;
+        this._swipeLastPx = 0;
+        this._swipeDeleteArmed = false;
+        if (this._swipeCard) {
+          this._swipeCard.style.transition = "none";
+          const td = this._swipeCard.closest("td");
+          td.style.position = "relative";
+          const reveal = document.createElement("div");
+          reveal.style.cssText = `
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            padding-inline-start: 18px;
+            background: #e03131;
+            opacity: 0;
+            pointer-events: none;
+            will-change: opacity;
+          `;
+          const label = document.createElement("span");
+          label.textContent = "Delete";
+          label.style.cssText = `
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+            transform-origin: left center;
+            will-change: transform;
+          `;
+          reveal.appendChild(label);
+          td.insertBefore(reveal, this._swipeCard);
+          this._swipeReveal = reveal;
+          this._swipeRevealLabel = label;
+        }
+        break;
+      }
+      case "MozSwipeGestureUpdate": {
+        event.preventDefault();
+        if (this._swipeCard) {
+          const px = Math.max(-320, Math.min(320, event.delta * 400));
+          this._swipeCard.style.translate = `${px}px 0`;
+          this._swipeLastPx = px;
+          if (this._swipeReveal) {
+            // Use the actual on-screen offset (not event.delta's sign, which
+            // doesn't reliably correspond to left-vs-right on this trackpad)
+            // as the source of truth for which way the card is visually
+            // trending. Delete is the left-drag side only, for now.
+            const isDeleteSide = px < 0;
+            // kSwipeSuccessThreshold in widget/SwipeTracker.cpp is 0.25 —
+            // progress reaching 1 here means the swipe would currently commit.
+            const progress = Math.min(Math.abs(event.delta) / 0.25, 1);
+            this._swipeReveal.style.opacity = isDeleteSide ? progress : 0;
+            this._swipeRevealLabel.style.transform = `scale(${1 + progress * 0.6})`;
+            const armed = isDeleteSide && progress >= 1;
+            if (armed && !this._swipeDeleteArmed) {
+              threadPane._tryHapticFeedback();
+            }
+            this._swipeDeleteArmed = armed;
+          }
+        }
+        break;
+      }
+      case "MozSwipeGesture":
+        // Final success event: the swipe crossed the commit threshold.
+        // Which action that means is decided in MozSwipeGestureEnd from the
+        // actual on-screen drag direction (_swipeLastPx), not from
+        // event.direction here.
+        event.preventDefault();
+        this._swipeCommitted = true;
+        break;
+      case "MozSwipeGestureEnd": {
+        event.preventDefault();
+        const card = this._swipeCard;
+        const row = this._swipeRow;
+        const reveal = this._swipeReveal;
+        // Delete is the only wired-up action for now, and only for a
+        // left-drag (matches _swipeLastPx's sign, the actual on-screen
+        // direction, not event.direction).
+        const deleteCommitted = this._swipeCommitted && this._swipeLastPx < 0;
+        this._swipeCard = null;
+        this._swipeRow = null;
+        this._swipeReveal = null;
+        this._swipeRevealLabel = null;
+        this._swipeCommitted = false;
+        this._swipeDeleteArmed = false;
+        if (reveal) {
+          setTimeout(() => reveal.remove(), 200);
+        }
+        if (!card || !row) {
+          break;
+        }
+        card.style.transition = "translate 320ms ease-in";
+        if (deleteCommitted) {
+          // Keep sliding in the same direction the card was already being
+          // dragged, all the way off the panel (percentage translate is
+          // relative to the card's own width).
+          card.style.translate = "-120% 0";
+          threadTree.selectedIndex = row.index;
+          setTimeout(() => {
+            // This table is virtualized: each visible <tr> is a fixed DOM
+            // slot, and removing a message just instantly rebinds every
+            // slot at-or-below it to show the next message down — the row
+            // elements themselves never move, so nothing here naturally
+            // animates. Fake a "slide up" with a FLIP: grab every affected
+            // row *before* the rebind, run the command (content jumps to
+            // its new binding instantly), then offset each row down by one
+            // row-height and transition it back to 0 so it visually glides
+            // into its new slot instead of snapping.
+            const deletedIndex = row.index;
+            const rowHeight = row.getBoundingClientRect().height || 70;
+            const shiftedRows = Array.from(threadTree.table.body.rows).filter(
+              r => r.index >= deletedIndex
+            );
+
+            // Run the command and immediately neutralize this row's inline
+            // styles in the same tick. Rows are DOM-recycled, so whatever
+            // message shifts into this slot next reuses this exact node —
+            // without this reset it would inherit the leftover translate
+            // and appear to already be slid out.
+            goDoCommand("cmd_delete");
+            card.style.transition = "";
+            card.style.translate = "";
+
+            for (const r of shiftedRows) {
+              r.style.transition = "none";
+              r.style.translate = `0 ${rowHeight}px`;
+            }
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                for (const r of shiftedRows) {
+                  r.style.transition = "translate 220ms ease-out";
+                  r.style.translate = "0 0";
+                }
+                setTimeout(() => {
+                  for (const r of shiftedRows) {
+                    r.style.transition = "";
+                  }
+                }, 220);
+              });
+            });
+          }, 320);
+        } else {
+          card.style.translate = "0 0";
+        }
+        break;
+      }
     }
   },
+
+  // macOS trackpad haptic feedback for the swipe-to-delete commit threshold.
+  // No JS-exposed API for NSHapticFeedbackManager exists in Gecko today, so
+  // this is a no-op until that native plumbing is added.
+  _tryHapticFeedback() {},
 
   observe(subject, topic, data) {
     switch (topic) {
