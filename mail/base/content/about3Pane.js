@@ -4540,6 +4540,11 @@ var threadPane = {
     threadTree.addEventListener("collapsed", this);
     threadTree.addEventListener("scroll", this);
     threadTree.addEventListener("showplaceholder", this);
+    threadTree.addEventListener("MozSwipeGestureMayStart", this);
+    threadTree.addEventListener("MozSwipeGestureStart", this);
+    threadTree.addEventListener("MozSwipeGestureUpdate", this);
+    threadTree.addEventListener("MozSwipeGestureEnd", this);
+    threadTree.addEventListener("MozSwipeGesture", this);
   },
 
   uninit() {
@@ -4626,8 +4631,115 @@ var threadPane = {
             : "placeholderNoMessages",
         ]);
         break;
+      case "MozSwipeGestureMayStart": {
+        const row = event.target.closest('tr[is^="thread-"]');
+        if (row) {
+          event.preventDefault();
+          event.allowedDirections =
+            event.DIRECTION_LEFT | event.DIRECTION_RIGHT;
+        }
+        break;
+      }
+      case "MozSwipeGestureStart": {
+        event.preventDefault();
+        const row = event.target.closest('tr[is^="thread-"]');
+        this._swipeRow = row;
+        this._swipeCard = row?.querySelector(".card-container");
+        this._swipeCommitted = null;
+        this._swipeDeleteArmed = false;
+        if (this._swipeCard) {
+          this._swipeCard.style.transition = "none";
+          const td = this._swipeCard.closest("td");
+          td.style.position = "relative";
+          const reveal = document.createElement("div");
+          reveal.textContent = "Delete";
+          reveal.style.cssText = `
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            padding-inline-start: 18px;
+            background: #e03131;
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+            opacity: 0;
+            pointer-events: none;
+          `;
+          td.insertBefore(reveal, this._swipeCard);
+          this._swipeReveal = reveal;
+        }
+        break;
+      }
+      case "MozSwipeGestureUpdate": {
+        event.preventDefault();
+        if (this._swipeCard) {
+          const px = Math.max(-120, Math.min(120, event.delta * 400));
+          this._swipeCard.style.translate = `${px}px 0`;
+          if (this._swipeReveal) {
+            // Positive delta trends toward the eventual "left" (archive)
+            // outcome, negative trends toward "right" (delete) — matches the
+            // direction convention confirmed for the final MozSwipeGesture
+            // event. Only show the delete reveal on the delete-trending side.
+            const isDeleteSide = event.delta < 0;
+            // kSwipeSuccessThreshold in widget/SwipeTracker.cpp is 0.25 —
+            // progress reaching 1 here means the swipe would currently commit.
+            const progress = Math.min(Math.abs(event.delta) / 0.25, 1);
+            this._swipeReveal.style.opacity = isDeleteSide ? progress : 0;
+            this._swipeReveal.style.fontSize = `${13 + progress * 8}px`;
+            const armed = isDeleteSide && progress >= 1;
+            if (armed && !this._swipeDeleteArmed) {
+              threadPane._tryHapticFeedback();
+            }
+            this._swipeDeleteArmed = armed;
+          }
+        }
+        break;
+      }
+      case "MozSwipeGesture":
+        // Final success event: direction is meaningful here (unlike Update/
+        // End), so record the outcome for MozSwipeGestureEnd to act on.
+        event.preventDefault();
+        if (event.direction == event.DIRECTION_LEFT) {
+          this._swipeCommitted = "archive";
+        } else if (event.direction == event.DIRECTION_RIGHT) {
+          this._swipeCommitted = "delete";
+        }
+        break;
+      case "MozSwipeGestureEnd": {
+        event.preventDefault();
+        const card = this._swipeCard;
+        const row = this._swipeRow;
+        const reveal = this._swipeReveal;
+        const committed = this._swipeCommitted;
+        this._swipeCard = null;
+        this._swipeRow = null;
+        this._swipeReveal = null;
+        this._swipeCommitted = null;
+        this._swipeDeleteArmed = false;
+        if (reveal) {
+          setTimeout(() => reveal.remove(), 200);
+        }
+        if (!card || !row) {
+          break;
+        }
+        card.style.transition = "translate 150ms ease-out";
+        if (committed) {
+          card.style.translate = committed == "archive" ? "-400px 0" : "400px 0";
+          threadTree.selectedIndex = row.index;
+          setTimeout(() => goDoCommand(`cmd_${committed}`), 120);
+        } else {
+          card.style.translate = "0 0";
+        }
+        break;
+      }
     }
   },
+
+  // macOS trackpad haptic feedback for the swipe-to-delete commit threshold.
+  // No JS-exposed API for NSHapticFeedbackManager exists in Gecko today, so
+  // this is a no-op until that native plumbing is added.
+  _tryHapticFeedback() {},
 
   observe(subject, topic, data) {
     switch (topic) {
