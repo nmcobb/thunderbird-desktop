@@ -125,9 +125,42 @@ var DefaultController = {
       case "cmd_undoCloseTab":
         document.getElementById("tabmail").undoCloseTab();
         break;
-      case "cmd_undo":
+      case "cmd_undo": {
+        // Animate the restored row(s) sliding into place instead of the
+        // instant snap this virtualized table would otherwise produce
+        // (same underlying issue as the swipe-delete list, and the same
+        // FLIP-style fix: offset the affected rows by one row-height and
+        // transition them back to 0 right after the rebind).
+        const about3Pane = document.getElementById("tabmail")?.currentAbout3Pane;
+        const threadTree = about3Pane?.threadTree;
+        const rowHeight =
+          threadTree?.table?.body?.rows[0]?.getBoundingClientRect().height ||
+          70;
+
         messenger.undo(msgWindow);
+
+        const rows = threadTree
+          ? Array.from(threadTree.table.body.rows)
+          : [];
+        for (const r of rows) {
+          r.style.transition = "none";
+          r.style.translate = `0 -${rowHeight}px`;
+        }
+        about3Pane?.requestAnimationFrame(() => {
+          about3Pane.requestAnimationFrame(() => {
+            for (const r of rows) {
+              r.style.transition = "translate 220ms ease-out";
+              r.style.translate = "0 0";
+            }
+            setTimeout(() => {
+              for (const r of rows) {
+                r.style.transition = "";
+              }
+            }, 220);
+          });
+        });
         break;
+      }
       case "cmd_redo":
         messenger.redo(msgWindow);
         break;

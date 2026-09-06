@@ -56,6 +56,11 @@ html|moz-input-search {
 
 #pref-category-box {
   background-color: var(--sidebar-background);
+  color: var(--sidebar-color);
+  /* Keep this sidebar on a fixed dark background regardless of the app's
+   * light/dark mode; color must be re-declared here (not just inherited)
+   * so its light-dark() also resolves against the forced scheme. */
+  color-scheme: dark;
   border-inline-end: none;
   inline-size: 18em;
 }

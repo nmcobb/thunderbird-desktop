@@ -157,6 +157,7 @@ body {
   overflow: hidden;
   color: var(--sidebar-color);
   background-color: var(--sidebar-background);
+  color-scheme: dark;
 }
 
 .books-pane-bottom {

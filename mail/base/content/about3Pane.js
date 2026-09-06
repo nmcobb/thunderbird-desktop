@@ -4407,6 +4407,22 @@ var threadPane = {
     Services.prefs.addObserver("mail.threadpane.table.horizontal_scroll", this);
     Services.prefs.addObserver("mail.threadpane.listview", this);
 
+    document
+      .getElementById("starredSectionHeader")
+      .addEventListener("click", () => this.toggleStarredSection());
+
+    // Collapse the Starred section on any click/focus outside it — e.g.
+    // selecting a message in the regular list, or moving to another panel.
+    document.addEventListener(
+      "click",
+      event => {
+        if (!event.target.closest("#starredSection")) {
+          this._setStarredSectionCollapsed(true);
+        }
+      },
+      { capture: true }
+    );
+
     Services.obs.addObserver(this, "addrbook-displayname-changed");
     Services.obs.addObserver(this, "custom-column-added");
     Services.obs.addObserver(this, "custom-column-removed");
@@ -4697,11 +4713,7 @@ var threadPane = {
             const progress = Math.min(Math.abs(event.delta) / 0.25, 1);
             this._swipeReveal.style.opacity = isDeleteSide ? progress : 0;
             this._swipeRevealLabel.style.transform = `scale(${1 + progress * 0.6})`;
-            const armed = isDeleteSide && progress >= 1;
-            if (armed && !this._swipeDeleteArmed) {
-              threadPane._tryHapticFeedback();
-            }
-            this._swipeDeleteArmed = armed;
+            this._swipeDeleteArmed = isDeleteSide && progress >= 1;
           }
         }
         break;
@@ -4711,8 +4723,16 @@ var threadPane = {
         // Which action that means is decided in MozSwipeGestureEnd from the
         // actual on-screen drag direction (_swipeLastPx), not from
         // event.direction here.
+        //
+        // This is also the authoritative haptic trigger (not the Update
+        // handler's delta-based "armed" heuristic below): Gecko's real
+        // commit decision factors in swipe velocity as well as displacement,
+        // so a fast flick can commit without delta ever crossing the 0.25
+        // threshold in an Update event — the heuristic would never arm, but
+        // this event still fires on every real commit.
         event.preventDefault();
         this._swipeCommitted = true;
+        threadPane._tryHapticFeedback();
         break;
       case "MozSwipeGestureEnd": {
         event.preventDefault();
@@ -4758,12 +4778,22 @@ var threadPane = {
               r => r.index >= deletedIndex
             );
 
-            // Run the command and immediately neutralize this row's inline
-            // styles in the same tick. Rows are DOM-recycled, so whatever
-            // message shifts into this slot next reuses this exact node —
-            // without this reset it would inherit the leftover translate
-            // and appear to already be slid out.
-            goDoCommand("cmd_delete");
+            // Call the underlying delete directly instead of goDoCommand
+            // ("cmd_delete"): the real command wraps this in
+            // MailUtils.confirmDelete(), a blocking "permanently delete?"
+            // dialog for folders like Junk/Trash with nowhere further to
+            // move to — which silently no-ops the whole thing if missed or
+            // cancelled. A deliberate full swipe is its own confirmation,
+            // the same way no mobile mail app asks "are you sure?" after
+            // a swipe-to-delete.
+            dbViewWrapperListener.threadPaneCommandUpdater.updateNextMessageAfterDelete();
+            gDBView.doCommand(Ci.nsMsgViewCommandType.deleteMsg);
+
+            // Immediately neutralize this row's inline styles in the same
+            // tick. Rows are DOM-recycled, so whatever message shifts into
+            // this slot next reuses this exact node — without this reset
+            // it would inherit the leftover translate and appear to
+            // already be slid out.
             card.style.transition = "";
             card.style.translate = "";
 
@@ -4793,10 +4823,111 @@ var threadPane = {
     }
   },
 
+  // Pinned "Starred" section above the regular thread pane, showing
+  // flagged messages in the current folder. A separate, simple DOM list —
+  // not integrated into gDBView/nsMsgDBView, so it doesn't support drag
+  // reordering or multi-select spanning both lists.
+  toggleStarredSection() {
+    const section = document.getElementById("starredSection");
+    this._setStarredSectionCollapsed(!section.classList.contains("collapsed"));
+  },
+
+  _setStarredSectionCollapsed(collapsed) {
+    const section = document.getElementById("starredSection");
+    const chevron = document.getElementById("starredSectionChevron");
+    const list = document.getElementById("starredSectionList");
+    section.classList.toggle("collapsed", collapsed);
+    chevron.style.transform = collapsed ? "rotate(-90deg)" : "";
+    if (collapsed) {
+      // Start from the list's true current height (not the CSS 160px cap)
+      // so the slide-down animates its full visible length instead of
+      // stalling until max-height drops below the actual content height.
+      list.style.maxHeight = `${list.scrollHeight}px`;
+      list.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        list.style.maxHeight = "0px";
+      });
+    } else {
+      list.style.maxHeight = `${Math.min(list.scrollHeight, 160)}px`;
+    }
+  },
+
+  refreshStarredSection() {
+    const section = document.getElementById("starredSection");
+    const list = document.getElementById("starredSectionList");
+    if (!section || !list) {
+      return;
+    }
+    list.replaceChildren();
+    if (!gFolder) {
+      section.hidden = true;
+      return;
+    }
+
+    // NOTE: this scans every header in the folder on every folder switch.
+    // Fine for typical folder sizes, but could be slow on a folder with
+    // tens of thousands of messages — there's no cheap "just the flagged
+    // ones" query available at this layer without going through gDBView's
+    // own sort/grouping (which would replace the user's current sort).
+    // One entry per conversation: multiple flagged messages with the same
+    // (reply/forward-prefix-stripped) subject only show their
+    // first-encountered header here. msgHdr.threadId turned out unreliable
+    // for this — messages that are visibly the same conversation didn't
+    // share a threadId when read via a plain folder.messages enumeration
+    // (outside a threaded view context), so grouping by normalized subject
+    // is the signal that actually matches what shows up as duplicates.
+    const normalizeSubject = subject =>
+      (subject || "")
+        .replace(/^\s*(re|fwd?|aw|wg)\s*:\s*/gi, "")
+        .trim()
+        .toLowerCase();
+    const starred = [];
+    const seenSubjects = new Set();
+    for (const msgHdr of gFolder.messages) {
+      if (!msgHdr.isFlagged) {
+        continue;
+      }
+      const key = normalizeSubject(msgHdr.mime2DecodedSubject || msgHdr.subject);
+      if (!seenSubjects.has(key)) {
+        seenSubjects.add(key);
+        starred.push(msgHdr);
+      }
+    }
+
+    starred.sort((a, b) => b.date - a.date);
+
+    section.hidden = starred.length == 0;
+    if (starred.length == 0) {
+      return;
+    }
+    document.getElementById("starredSectionCount").textContent =
+      starred.length;
+
+    for (const msgHdr of starred) {
+      const row = document.createElement("div");
+      row.className = "starred-row";
+      row.textContent =
+        msgHdr.mime2DecodedSubject || msgHdr.subject || "(no subject)";
+      row.addEventListener("click", () => selectMessage(msgHdr));
+      list.appendChild(row);
+    }
+
+    // Keep an already-expanded list's height in sync with new content
+    // (e.g. after a folder switch), rather than leaving it clipped to
+    // whatever the previous folder's content measured.
+    if (!section.classList.contains("collapsed")) {
+      list.style.maxHeight = `${Math.min(list.scrollHeight, 160)}px`;
+    }
+  },
+
   // macOS trackpad haptic feedback for the swipe-to-delete commit threshold.
-  // No JS-exposed API for NSHapticFeedbackManager exists in Gecko today, so
-  // this is a no-op until that native plumbing is added.
-  _tryHapticFeedback() {},
+  _tryHapticFeedback() {
+    try {
+      window.windowUtils.performHapticFeedback();
+    } catch (e) {
+      console.error("performHapticFeedback failed:", e);
+    }
+  },
 
   observe(subject, topic, data) {
     switch (topic) {
@@ -5496,6 +5627,8 @@ var threadPane = {
    *   selected messages.
    */
   restoreSelection({ discard = true, notify = true, expand = true } = {}) {
+    this.refreshStarredSection();
+
     const selectionKey = this._getSavedSelectionKey();
     if (
       !selectionKey ||

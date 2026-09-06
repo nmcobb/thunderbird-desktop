@@ -127,6 +127,11 @@ body {
   overflow: hidden;
   background-color: var(--sidebar-background);
   color: var(--sidebar-color);
+  /* Keep the folder pane on a fixed dark background regardless of the app's
+   * light/dark mode, for stronger contrast against the lighter content
+   * panes. This flips every light-dark() token used within this subtree
+   * (selection/hover colors, badges, etc.) to its dark alternative too. */
+  color-scheme: dark;
   user-select: none;
   display: flex;
   flex-direction: column;

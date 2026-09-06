@@ -46,6 +46,8 @@ body {
   block-size: 100vh;
   box-sizing: border-box;
   background-color: var(--sidebar-background);
+  color: var(--sidebar-color);
+  color-scheme: dark;
   border-inline-end: none;
 }
 

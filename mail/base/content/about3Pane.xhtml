@@ -154,6 +154,14 @@
       </div>
     </div>
 #include quickFilterBar.inc.xhtml
+    <div id="starredSection" hidden="hidden">
+      <button id="starredSectionHeader" type="button">
+        <img id="starredSectionChevron" src="chrome://messenger/skin/icons/new/nav-down-sm.svg" alt="" />
+        <span data-l10n-id="threadpane-column-header-flagged">Starred</span>
+        <span id="starredSectionCount"></span>
+      </button>
+      <div id="starredSectionList"></div>
+    </div>
     <tree-view id="threadTree" data-label-id="threadPaneFolderName">
       <slot name="placeholders">
         <div id="placeholderNoMessages"

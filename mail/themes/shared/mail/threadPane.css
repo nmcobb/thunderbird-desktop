@@ -637,3 +637,59 @@ tr[data-properties~="outgoing"].selected .correspondentcol-column {
 .is-unified tr:not([data-properties~="dummy"]) .accountcol-column::before {
   display: inline-flex;
 }
+
+/* Pinned "Starred" section above the regular message list */
+
+#starredSection {
+  border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  background-color: color-mix(in srgb, #f5b400 6%, transparent);
+}
+
+#starredSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+
+#starredSectionChevron {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease;
+}
+
+#starredSectionCount {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+#starredSectionList {
+  max-height: 160px;
+  overflow-y: auto;
+  transition: max-height 200ms ease;
+}
+
+.starred-row {
+  padding: 6px 12px 6px 30px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.starred-row:last-child {
+  border-bottom: none;
+}
+
+.starred-row:hover {
+  background-color: color-mix(in srgb, currentColor 6%, transparent);
+}

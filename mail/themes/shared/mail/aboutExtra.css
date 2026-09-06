@@ -33,6 +33,8 @@ body {
 
 #sidebar {
   background-color: var(--sidebar-background);
+  color: var(--sidebar-color);
+  color-scheme: dark;
 
   & #category-plugin {
     display: none;
