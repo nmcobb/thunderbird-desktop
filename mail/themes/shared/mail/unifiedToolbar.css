@@ -46,7 +46,10 @@
 
 unified-toolbar {
   display: block;
-  border-block-end: 1px solid rgba(0, 0, 0, 0.15);
+  /* Personal customization: this 1px border rendered as a visible hairline
+   * even with the toolbar's actual content hidden, since it's on this
+   * wrapper element unconditionally, not on the content itself. */
+  border-block-end: none;
 }
 
 #unifiedToolbarContainer {
@@ -66,6 +69,21 @@ unified-toolbar {
 
     @media (-moz-platform: windows) or (-moz-platform: linux) {
       align-self: stretch;
+    }
+
+    /* Personal customization: pull the traffic lights out of this flex row
+     * entirely and pin them to the top-left of the window, so they sit
+     * above the folder pane instead of in the (now content-empty, but
+     * still full window width) unified toolbar row. Native window-chrome
+     * widgets don't tolerate being relocated into another element's DOM
+     * subtree (tried that, it broke their rendering), so this only
+     * repositions them via CSS — they stay exactly where they already are
+     * in the document. */
+    @media (-moz-platform: macos) {
+      position: fixed;
+      inset-block-start: 10px;
+      inset-inline-start: 0;
+      z-index: 1000;
     }
   }
 
@@ -88,7 +106,13 @@ unified-toolbar {
 }
 
 #unifiedToolbarContent {
-  flex: 1 1 auto;
+  /* Don't absorb the toolbar's free space — the two flexible .spacer items
+   * inside this list (flex: 1 1 auto, from unifiedToolbarShared.css) only
+   * create a visible gap when their container has room to grow into. With
+   * this pinned to its content size, the spacers collapse to ~0 and
+   * everything (Spaces menu, extension icons, app menu) packs to the left
+   * instead of being split across a wide gap. */
+  flex: 0 0 auto;
   min-block-size: max(var(--unified-toolbar-minimal-height), var(--unified-toolbar-searchbar-height), var(--unified-toolbar-content-min-height));
   margin: 0;
   /* Padding needed for the children's focus ring. */

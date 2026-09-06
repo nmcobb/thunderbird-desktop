@@ -653,3 +653,38 @@
     }
   }
 }
+
+/* A visible divider between ordinary message cards. Stock Thunderbird only
+ * draws a divider between Grouped-By-Sort headers (see the ::after rules
+ * above) — regular cards otherwise run together with no separation. */
+tr.card-layout:not([data-properties~="dummy"]) {
+  border-block-end: 1px solid light-dark(var(--color-gray-20), var(--color-gray-80));
+
+  &:last-child {
+    border-block-end: none;
+  }
+
+  /* Give each card its own surface, distinct from the pane's background,
+   * with a subtle shadow — so they read as individual cards resting on
+   * the pane rather than plain divided rows sharing its flat background.
+   * The actual background paint happens via --tree-card-background (see
+   * tree-listbox.css), which .card-container reads with higher specificity
+   * than a plain background-color override here would win against — so
+   * this overrides the variable itself, the same mechanism the existing
+   * selected/hover states already use. */
+  --tree-card-background: var(--layout-background-1);
+
+  & .card-container {
+    border-radius: 6px;
+    box-shadow: 0 1px 2px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.3));
+    margin-block: 2px;
+    margin-inline: 4px;
+  }
+
+  /* Slightly darker on hover — mouse-only (not :focus/:focus-within, which
+   * also drive the existing keyboard "current row" highlight and shouldn't
+   * be double-darkened). */
+  &:hover .card-container {
+    filter: brightness(0.95);
+  }
+}

@@ -18,12 +18,12 @@
        * pseudo-element avoids it from suppressing the chrome-content separator
        * border, etc */
       &::after {
-        -moz-default-appearance: -moz-window-titlebar;
-        appearance: auto;
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: -1;
+        /* Personal customization: this native titlebar background rendered
+         * as a persistent hairline/bar at the top of the window regardless
+         * of the unified toolbar's own content being hidden, since it's
+         * native OS chrome covering this element's box, not something our
+         * content-hiding touches. */
+        content: none;
       }
     }
   }

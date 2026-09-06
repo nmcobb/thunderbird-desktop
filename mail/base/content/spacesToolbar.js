@@ -187,6 +187,42 @@ var gSpacesToolbar = {
     this.focusButton = document.getElementById("mailButton");
     const tabmail = document.getElementById("tabmail");
 
+    // Personal customization: relocate the top unified toolbar's extension
+    // action buttons and the app menu button into this toolbar, then hide
+    // the top toolbar entirely so the thread pane can extend to the top of
+    // the window. Moves the whole customizable-element/toolbarbutton nodes
+    // (not just their inner buttons) so their own state/badge wiring stays
+    // intact.
+    const addonsContainer = document.getElementById(
+      "spacesToolbarAddonsContainer"
+    );
+    if (addonsContainer) {
+      for (const extensionAction of document.querySelectorAll(
+        "#unifiedToolbarContent .extension-action"
+      )) {
+        addonsContainer.appendChild(extensionAction);
+      }
+    }
+    const bottomContainer = this.element.querySelector(
+      ".spaces-toolbar-bottom-container"
+    );
+    const appMenuButton = document.getElementById("button-appmenu");
+    if (bottomContainer && appMenuButton) {
+      appMenuButton.classList.add("spaces-toolbar-button");
+      bottomContainer.insertBefore(appMenuButton, bottomContainer.firstChild);
+    }
+    // The macOS traffic-light window controls (.titlebar-buttonbox-container)
+    // render via native OS widgets (-moz-window-button-box) — relocating
+    // that element into this flex rail visually mangled them (wrong
+    // background, distorted sizing) since native window-chrome widgets
+    // don't cooperate with being forced into an arbitrary layout context.
+    // Leaving them at their default native position instead: just hide the
+    // toolbar row itself, not the whole container that holds them.
+    const unifiedToolbarEl = document.getElementById("unifiedToolbar");
+    if (unifiedToolbarEl) {
+      unifiedToolbarEl.hidden = true;
+    }
+
     this.spaces = [
       {
         name: "mail",

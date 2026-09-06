@@ -195,6 +195,11 @@ body {
 #folderPaneHeaderBar {
   flex-direction: row-reverse;
   background-color: var(--sidebar-background);
+  /* Personal customization: clear the macOS traffic-light window controls,
+   * which are fixed-positioned in the outer chrome window (a separate
+   * document from this one — see unifiedToolbar.css) at the top-left of
+   * the window, roughly overlapping where this bar would otherwise start. */
+  margin-block-start: 34px;
 }
 
 #folderPaneGetMessages,
